@@ -233,24 +233,19 @@ I changed the labels to match the AI's suggestions and kept asking it the same q
 
 ## Rate Limiting
 
-**My limits:** ___ per minute, ___ per day
+**My limits:** 10 per minute, 200 per day
 
 **Why those numbers and not others:**
-<!-- Think about two people: a real writer submitting their own work a few
-     times an hour, and a script sending a thousand variations to map your
-     thresholds. Your numbers have to be liveable for the first and hostile to
-     the second. -->
+I chose 10 per minute and 200 per day because a real writer may submit a few drafts in a short burst while editing, but a script trying to map thresholds by sending large numbers of variations should be slowed hard after a small burst. Ten requests a minute is still generous for a human working by hand, while the daily cap keeps a single actor from pushing a large batch across the day. A thousand variations from one creator_id would hit the minute limit fast and the day cap would still stop a sustained campaign.
 
-**What a caller counts as:** <!-- per address, or per creator_id? They fail
-differently — one script can look like a thousand callers, and one household
-can look like one. -->
+**What a caller counts as:** per `creator_id`, not per IP address. A one-off script can spoof a thousand different addresses, but a real account still has a stable creator_id. Counting per creator catches the same worker trying to brute-force thresholds while leaving a normal household or shared network alone.
 
 **The run of status codes when I pushed past it:**
 
 <!-- python run_attacks.py --flood 15 -->
 
-```
-
+```text
+200 200 200 200 200 200 200 200 200 200 429 429 429 429 429
 ```
 
 ---
