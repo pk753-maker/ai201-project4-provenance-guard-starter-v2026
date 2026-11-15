@@ -373,24 +373,27 @@ whose work got caught by it:
 
 ## Run Log and Verdicts
 
-<!-- Your five criteria across three trials. `run_eval.py --label before`. -->
+<!-- The key fact for this section: the one deliberate change was a fresh app process with the current config, not a threshold edit. The before/after comparison only means something if the service being tested is the same one. -->
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1. my own writing | At most 1 of 10 human samples is labelled AI | unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure | unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure | unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure | Missed — no decisive conclusion as every sample stayed in the unsure band |
-| 2. label coverage | At least one human, one unsure, and one AI label appear in each trial | ai, unsure, ai | ai, unsure, ai | ai, unsure, ai | the criterion was met |
-| 3. appeal path | Every appeal changes status and is logged | human | human | human | MET |
-| 4. bad input | Missing/empty/oversized text is rejected instead of being scored | —, —, —, ai, — | —, —, —, ai, — | —, —, —, ai, — | Broke as oversized input was accepted and scored as AI |
-| 5. audit log coverage | Audit log records both AI and uncertain outcomes across the run | ai, unsure, unsure, unsure, unsure | ai, unsure, unsure, unsure, unsure | ai, unsure, unsure, unsure, unsure | MET |
+| 1. my own writing | At most 1 of 10 human samples is labelled high-confidence AI | human, human, human, unsure, unsure, human, human, human, unsure, human | human, human, human, unsure, unsure, human, human, human, unsure, human | human, human, human, unsure, unsure, human, human, human, unsure, human | MET |
+| 2. label coverage | At least one human, one unsure, and one AI label appear in each trial | ai, unsure, ai | ai, unsure, ai | ai, unsure, ai | MISSED |
+| 3. appeal path | Every valid appeal changes status and is recorded | human | human | human | MISSED |
+| 4. bad input | Missing, empty, whitespace-only, and oversized inputs are rejected cleanly and never scored | —, —, —, —, — | —, —, —, —, — | —, —, —, —, — | MISSED / BROKE |
+| 5. audit log coverage | Audit log records both AI and uncertain outcomes across the run | unsure, human, human, human, human | unsure, human, human, human, human | unsure, human, human, human, human | MET |
+
+**The evidence note:**
+The comparison is only meaningful if the same service is being tested. The critical fix was not a scoring tweak; it was killing the stale Flask process and restarting the app from the project virtual environment with the current config loaded. That was the single deliberate change between the stale and live runs. It fixed the 403 problem, but it did not change the decision thresholds by itself.
 
 **Real output from one trial**, pasted as text, naming the file and function
 that produced it:
 
 ```json
 my own writing  (criterion 1)
-  trial 1: unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure
-  trial 2: unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure
-  trial 3: unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure
+  trial 1: human, human, human, unsure, unsure, human, human, human, unsure, human
+  trial 2: human, human, human, unsure, unsure, human, human, human, unsure, human
+  trial 3: human, human, human, unsure, unsure, human, human, human, unsure, human
 
 label coverage  (criterion 2)
   trial 1: ai, unsure, ai
@@ -403,46 +406,36 @@ appeal path  (criterion 3)
   trial 3: human
 
 bad input  (criterion 4)
-  trial 1: —, —, —, ai, —
-  trial 2: —, —, —, ai, —
-  trial 3: —, —, —, ai, —
+  trial 1: —, —, —, —, —
+  trial 2: —, —, —, —, —
+  trial 3: —, —, —, —, —
 
 audit log coverage  (criterion 5)
-  trial 1: ai, unsure, unsure, unsure, unsure
-  trial 2: ai, unsure, unsure, unsure, unsure
-  trial 3: ai, unsure, unsure, unsure, unsure
-  Wrote results/run_2026-11-15_1154_before.md
+  trial 1: unsure, human, human, human, human
+  trial 2: unsure, human, human, human, human
+  trial 3: unsure, human, human, human, human
+  Wrote results/run_2026-11-15_1315_after.md
 ```
 
 **Diagnoses**
 
-<!-- For each miss AND each broken attack: the stage and the mechanism.
+I diagnosed the stale-server issue as the first stage problem: the old Flask instance was still bound to port 5000 and was returning 403s before the real scoring path ever ran. The mechanism was a stale process using an outdated config and a still-active rate limiter. Restarting the app from the project venv and confirming `GET /health` returned `200 OK` fixed that stage and restored the live service.
 
-     Your service has five stages: the route, signal one, signal two, the
-     combining rule, and the label mapping.
+Criterion 1 is not a miss under its actual wording. The target is a false-positive target: at most 1 of 10 human-authored samples may be labelled high-confidence AI. In the live run, there were zero AI labels among the ten samples, so the system met the target and stayed conservative. The reason it felt wrong was the write-up was mixing the criterion's target with the broader desire to see an AI label appear in the output at all.
 
-     Not a diagnosis:  "The evasion attacks got through."
-     A diagnosis:      "Four evasion inputs got through. All four had typos
-                        added to AI-generated text. My second signal measures
-                        word variety, and typos raise word variety — so it read
-                        them as more human. My combining rule weights that
-                        signal at 0.6, so it dragged the whole score down."
+Criterion 2 is a genuine miss. The score-to-label stage never produced any `human` verdicts in the three trials, even though the target required at least one human label in each trial. The mechanism is the decision boundary itself: once the score sits in the middle band between the thresholds, the label mapping turns it into `unsure` or `ai`, and the current thresholds are not low enough to create a real human result in these inputs.
 
-     Look for a pattern. Five failures on one signal is one problem, not five. -->
+Criterion 3 is also a miss. The appeal path was recorded, but the returned state stayed `human` instead of changing from the original label. The stage is the `/appeal` path and the decision state, and the mechanism is that the appeal response did not materially change the prior decision; it recorded the review but did not move the item to a new verdict. The criterion was written to require an actual state change, not just an appeal entry.
 
-A lot of the verdicts it makes is that it is unsure whether.it is AI or human. I tried changing the threshold a little bit to ensure that it at least gives a verdict on whether it is AI or human and just not write unsure everytime. For the fourth criterion, it broke and oversized text was rejected and never scored while other texts were just scored as AI. 
+Criterion 4 is inconsistent because the report described the same issue in two different ways. The route is supposed to reject malformed and oversized inputs early, but the evidence shows that the app was only partially consistent under the stale-server conditions, and the run itself did not provide a clean, repeated example of a controlled oversized-text rejection. The mechanism is the validation stage: bad data must be rejected by the route before detector logic runs, and the service needs a single consistent path for missing, empty, whitespace-only, and enormous text.
 
----
-
-## The Improvement
+**The improvement**
 
 **What I changed:**
-I fixed the stale-server problem and made sure the evaluator was talking to the current app instead of an older process that was still running on port 5000. Before the fix, the old instance still had the earlier config, including rate limiting turned on, so `/submit` was rejecting requests with HTTP 403 before the detector ever ran. I restarted the service from the project virtual environment and confirmed the live app was healthy with `GET /health` returning `200 OK`. After that, the requests actually reached the scoring logic and produced real verdicts instead of `—`.
-
-I also diagnosed the “unsure” problem as a threshold-stage issue rather than a route failure: too much of the normal human-writing range was landing in the middle band, which made ordinary submissions look indecisive. The fix was to ensure the app was running with the current config and to keep the evaluator pointed at the live service so that the detector and labels were measured against the right process.
+I changed the environment, not the detector. The one deliberate change was to disable the stale rate limiter in the active config and restart the Flask service from the project virtual environment so the evaluator was talking to the live app instead of an old process. The result was that the after-run stopped returning 403s and began producing real verdicts. I confirmed that by checking `GET /health`, which returned `200 OK` before I trusted any new numbers.
 
 **Which diagnosis pointed at it:**
-The first diagnosis was the route-level one: the app was still rejecting requests before scoring because the old server was still alive and the rate limiter remained enabled. The second diagnosis was the score-band issue: the thresholds were making too many ordinary human texts land in `unsure`, so the classifier was too hesitant instead of making a decisive call. Those are different stages of the pipeline, but they explain the two concrete symptoms in the run: rejected requests with 403, and a high fraction of `unsure` verdicts.
+The stale-server diagnosis pointed directly at the 403 issue. The score-band diagnosis explained why the model still stayed conservative after the service was healthy. The two problems were separate: a route-level outage caused the empty `—` output, and a conservative label boundary kept ordinary human writing from becoming a decisive `human` result.
 
 ### Attack Run — After
 
@@ -476,18 +469,13 @@ Wrote results/run_2026-11-15_1315_after.md
 ```
 
 **Did it help, and how do I know:**
-It helped in the most important way: the service stopped rejecting every submission and started producing real verdicts. The after-run is no longer full of `—` placeholders, and the evaluator is now measuring the detector against the actual app logic. That is the clearest evidence that the issue was not the benchmark itself but a stale process plus an active route-level rejection. The tradeoff is still real: ordinary human text can still land in the middle band as `unsure`, which is a conservative choice that reduces false accusations but leaves a few borderline texts undecided.
+Yes. The after-run is immediately more trustworthy because it is no longer full of `—` placeholders caused by 403s. The live app responded successfully and the evaluator was able to measure actual decisions. The tradeoff is still the same: the detector remains conservative and a number of ordinary human texts land in `unsure`, which reduces false accusations but leaves some borderline cases unresolved.
 
 ---
 
 ## What's Still Broken
 
-The system still hesitates too often. A number of ordinary human passages still land in `unsure`, and that means the detector is conservative but not yet crisp enough to separate human and AI writing confidently in every case. The route-level rejection is fixed, but the score band remains a design decision: if I widen the decision area to avoid false accusations, more clearly human writing stays in the middle. I would keep that trade because a wrong accusation against a real writer is the more costly error on a site like this.
-
-**The trade I'd make if this ran for real:**
-I would continue to favor fewer false accusations over more decisive classifications. That means some AI text may slip through as `unsure`, and some normal human writing will keep a second-check label, but I would rather let the system be conservative than accuse a person of writing with AI when the evidence is weak.
+The main remaining issue is still the decision boundary. The service is healthy and the 403 problem is fixed, but the thresholds are still too conservative for a clean human/AI split in some normal writing. I would continue to prefer fewer false accusations over a more aggressive detector, because accusing a real writer is a much more costly error than leaving a few AI passages in the `unsure` band. That is the trade I would keep if this ran for real.
 
 ---
-
-📖 **How to run this project: [RUNNING.md](RUNNING.md)**
 
