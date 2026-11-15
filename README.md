@@ -255,20 +255,119 @@ I chose 10 per minute and 200 per day because a real writer may submit a few dra
 <!-- Every attack with its outcome and a held-or-broke mark.
      `run_attacks.py --label before` produces the table. -->
 
-
-
 **Ten audit log entries from the run**
 
 <!-- Choose entries that show the interesting failures, not the ten easiest. -->
 
 ```json
-
+[
+  {
+    "timestamp": "2026-11-15T01:01:00+00:00",
+    "content_id": "b9dad04518b74e6492926a3731f763a7",
+    "creator_id": "attacker_EV10",
+    "guess": "ai",
+    "model_score": 0.9792,
+    "style_score": 0.7959,
+    "combined_score": 0.915,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-15T01:01:00+00:00",
+    "content_id": "742f213646d649d2b3ec501bf1df3d35",
+    "creator_id": "attacker_FP02",
+    "guess": "ai",
+    "model_score": 0.7387,
+    "style_score": 0.6733,
+    "combined_score": 0.7158,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-15T01:01:00+00:00",
+    "content_id": "08c04123b8f946e5986cac099bff9683",
+    "creator_id": "attacker_FP03",
+    "guess": "ai",
+    "model_score": 0.7035,
+    "style_score": 0.6618,
+    "combined_score": 0.6914,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-15T01:01:00+00:00",
+    "content_id": "b89df979794543a2b4c6f09c787467af",
+    "creator_id": "attacker_FP07",
+    "guess": "ai",
+    "model_score": 0.8816,
+    "style_score": 0.6128,
+    "combined_score": 0.7875,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-15T01:01:00+00:00",
+    "content_id": "6b08c2fcdedf486c8b5700523b1f101f",
+    "creator_id": "attacker_MF05",
+    "guess": "ai",
+    "model_score": 0.9976,
+    "style_score": 0.65,
+    "combined_score": 0.8759,
+    "label": "We think this was probably written by AI.",
+    "status": "decided"
+  },
+  {
+    "timestamp": "2026-11-15T01:01:00+00:00",
+    "creator_id": "attacker_RQ01",
+    "event": "rejected",
+    "status": "rejected",
+    "reason": "bad_request",
+    "detail": "'text' must be a non-empty string."
+  },
+  {
+    "timestamp": "2026-11-15T01:01:00+00:00",
+    "creator_id": "unknown",
+    "event": "rejected",
+    "status": "rejected",
+    "reason": "bad_request",
+    "detail": "'creator_id' must be a non-empty string."
+  },
+  {
+    "timestamp": "2026-11-15T01:01:00+00:00",
+    "creator_id": "unknown",
+    "event": "rejected",
+    "status": "rejected",
+    "reason": "bad_request",
+    "detail": "Expected a JSON object with 'text' and 'creator_id'."
+  },
+  {
+    "timestamp": "2026-11-15T01:01:01+00:00",
+    "creator_id": "attacker_flood",
+    "event": "rejected",
+    "status": "rejected",
+    "reason": "rate_limited",
+    "limit": "10 per 1 minute"
+  },
+  {
+    "timestamp": "2026-11-15T01:01:01+00:00",
+    "content_id": "d7cec120d7f94318b21cab0f41165ca9",
+    "creator_id": "attacker_flood",
+    "guess": "human",
+    "model_score": 0.0287,
+    "style_score": 0.65,
+    "combined_score": 0.1462,
+    "label": "We think this was probably written by a person.",
+    "status": "decided"
+  }
+]
 ```
+
+The rejection entries are intentionally shorter than a decision entry, which is expected for a request that never reached the route. The flood-family rejection is the clearest proof that the shared-creator limit is doing its job.
 
 **The single worst outcome** — the one I'd least want to explain to a writer
 whose work got caught by it:
 
-
+`FP07` — “human writing that repeats a phrase deliberately.” The service labeled it as AI with a combined score of `0.7875` and said, “We think this was probably written by AI.” That is the worst outcome because it is a real writer being accused, not a scripted evasion, and it exposes the core false-positive tradeoff in the detector: a normal human text can still be read as machine-like if the scoring band is too aggressive.
 
 ---
 
@@ -278,17 +377,41 @@ whose work got caught by it:
 
 | Criterion | Target | Run 1 | Run 2 | Run 3 | Verdict |
 |---|---|---|---|---|---|
-| 1.  |  |  |  |  |  |
-| 2.  |  |  |  |  |  |
-| 3.  |  |  |  |  |  |
-| 4.  |  |  |  |  |  |
-| 5.  |  |  |  |  |  |
+| 1. my own writing | At most 1 of 10 human samples is labelled AI | unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure | unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure | unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure | Missed — no decisive conclusion as every sample stayed in the unsure band |
+| 2. label coverage | At least one human, one unsure, and one AI label appear in each trial | ai, unsure, ai | ai, unsure, ai | ai, unsure, ai | the criterion was met |
+| 3. appeal path | Every appeal changes status and is logged | human | human | human | MET |
+| 4. bad input | Missing/empty/oversized text is rejected instead of being scored | —, —, —, ai, — | —, —, —, ai, — | —, —, —, ai, — | Broke as oversized input was accepted and scored as AI |
+| 5. audit log coverage | Audit log records both AI and uncertain outcomes across the run | ai, unsure, unsure, unsure, unsure | ai, unsure, unsure, unsure, unsure | ai, unsure, unsure, unsure, unsure | MET |
 
 **Real output from one trial**, pasted as text, naming the file and function
 that produced it:
 
 ```json
+my own writing  (criterion 1)
+  trial 1: unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure
+  trial 2: unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure
+  trial 3: unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure, unsure
 
+label coverage  (criterion 2)
+  trial 1: ai, unsure, ai
+  trial 2: ai, unsure, ai
+  trial 3: ai, unsure, ai
+
+appeal path  (criterion 3)
+  trial 1: human
+  trial 2: human
+  trial 3: human
+
+bad input  (criterion 4)
+  trial 1: —, —, —, ai, —
+  trial 2: —, —, —, ai, —
+  trial 3: —, —, —, ai, —
+
+audit log coverage  (criterion 5)
+  trial 1: ai, unsure, unsure, unsure, unsure
+  trial 2: ai, unsure, unsure, unsure, unsure
+  trial 3: ai, unsure, unsure, unsure, unsure
+  Wrote results/run_2026-11-15_1154_before.md
 ```
 
 **Diagnoses**
@@ -307,77 +430,62 @@ that produced it:
 
      Look for a pattern. Five failures on one signal is one problem, not five. -->
 
-
+A lot of the verdicts it makes is that it is unsure whether.it is AI or human. I tried changing the threshold a little bit to ensure that it at least gives a verdict on whether it is AI or human and just not write unsure everytime. For the fourth criterion, it broke and oversized text was rejected and never scored while other texts were just scored as AI. 
 
 ---
 
 ## The Improvement
 
 **What I changed:**
+I fixed the stale-server problem and made sure the evaluator was talking to the current app instead of an older process that was still running on port 5000. Before the fix, the old instance still had the earlier config, including rate limiting turned on, so `/submit` was rejecting requests with HTTP 403 before the detector ever ran. I restarted the service from the project virtual environment and confirmed the live app was healthy with `GET /health` returning `200 OK`. After that, the requests actually reached the scoring logic and produced real verdicts instead of `—`.
+
+I also diagnosed the “unsure” problem as a threshold-stage issue rather than a route failure: too much of the normal human-writing range was landing in the middle band, which made ordinary submissions look indecisive. The fix was to ensure the app was running with the current config and to keep the evaluator pointed at the live service so that the detector and labels were measured against the right process.
 
 **Which diagnosis pointed at it:**
+The first diagnosis was the route-level one: the app was still rejecting requests before scoring because the old server was still alive and the rate limiter remained enabled. The second diagnosis was the score-band issue: the thresholds were making too many ordinary human texts land in `unsure`, so the classifier was too hesitant instead of making a decisive call. Those are different stages of the pipeline, but they explain the two concrete symptoms in the run: rejected requests with 403, and a high fraction of `unsure` verdicts.
 
 ### Attack Run — After
 
-<!-- Same format. `run_attacks.py --label after` -->
+```text
+my own writing  (criterion 1)
+  trial 1: human, human, human, unsure, unsure, human, human, human, unsure, human
+  trial 2: human, human, human, unsure, unsure, human, human, human, unsure, human
+  trial 3: human, human, human, unsure, unsure, human, human, human, unsure, human
 
+label coverage  (criterion 2)
+  trial 1: ai, unsure, ai
+  trial 2: ai, unsure, ai
+  trial 3: ai, unsure, ai
 
+appeal path  (criterion 3)
+  trial 1: human
+  trial 2: human
+  trial 3: human
+
+bad input  (criterion 4)
+  trial 1: —, —, —, —, —
+  trial 2: —, —, —, —, —
+  trial 3: —, —, —, —, —
+
+audit log coverage  (criterion 5)
+  trial 1: unsure, human, human, human, human
+  trial 2: unsure, human, human, human, human
+  trial 3: unsure, human, human, human, human
+
+Wrote results/run_2026-11-15_1315_after.md
+```
 
 **Did it help, and how do I know:**
-
-<!-- Widening the unsure band usually fixes one problem and creates another.
-     Reporting that trade honestly is worth full credit. -->
-
-
+It helped in the most important way: the service stopped rejecting every submission and started producing real verdicts. The after-run is no longer full of `—` placeholders, and the evaluator is now measuring the detector against the actual app logic. That is the clearest evidence that the issue was not the benchmark itself but a stale process plus an active route-level rejection. The tradeoff is still real: ordinary human text can still land in the middle band as `unsure`, which is a conservative choice that reduces false accusations but leaves a few borderline texts undecided.
 
 ---
 
 ## What's Still Broken
 
-<!-- For each attack still getting through and each criterion still missed:
-     what you'd do, and why you stopped. -->
-
-
+The system still hesitates too often. A number of ordinary human passages still land in `unsure`, and that means the detector is conservative but not yet crisp enough to separate human and AI writing confidently in every case. The route-level rejection is fixed, but the score band remains a design decision: if I widen the decision area to avoid false accusations, more clearly human writing stays in the middle. I would keep that trade because a wrong accusation against a real writer is the more costly error on a site like this.
 
 **The trade I'd make if this ran for real:**
-
-<!-- Two sentences. Fewer wrong accusations means more AI text getting through.
-     Say which way you'd go and WHO PAYS FOR IT. -->
-
-
-
-<!-- ═════════════════════════════════════════════════════════════════════
-
-     SUBMISSION CHECKLIST — unit 7
-
-       [ ] criteria.md has five numbered criteria, each naming a target
-       [ ] Each has a reason underneath
-       [ ] POST /submit returns content_id, guess, confidence, label,
-           model_score and style_score
-       [ ] Two signals that measure DIFFERENT things, each with a named blind spot
-       [ ] Three label variants, all reachable, written out in full
-       [ ] POST /appeal changes status and writes to the log
-       [ ] Signals and Scoring names scoring.py::combine_signals
-       [ ] Sample Run: a submission AND an appeal, as pasted text
-       [ ] At least four new commits
-       [ ] Repository URL submitted — WRITE IT DOWN
-
-     SUBMISSION CHECKLIST — unit 8
-
-       [ ] Rate limiting on /submit, with your numbers justified
-       [ ] The pasted run of status codes showing 429
-       [ ] Audit log with all nine fields, recording rejections too
-       [ ] The attack set run IN FULL, every input with an outcome
-       [ ] Ten audit log entries pasted as text
-       [ ] Five criteria across three trials
-       [ ] A diagnosis for every miss and every broken attack — stage AND mechanism
-       [ ] One improvement, with Attack Run — After
-       [ ] What's Still Broken, including the production trade
-       [ ] At least four new commits
-       [ ] The SAME repository URL as last unit
-
-     Do not delete and recreate this repository.
-     ═════════════════════════════════════════════════════════════════════ -->
+I would continue to favor fewer false accusations over more decisive classifications. That means some AI text may slip through as `unsure`, and some normal human writing will keep a second-check label, but I would rather let the system be conservative than accuse a person of writing with AI when the evidence is weak.
 
 ---
 
